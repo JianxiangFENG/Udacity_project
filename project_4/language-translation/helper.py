@@ -33,7 +33,9 @@ def preprocess_and_save_data(source_path, target_path, text_to_ids):
     target_vocab_to_int, target_int_to_vocab = create_lookup_tables(target_text)
 
     source_text, target_text = text_to_ids(source_text, target_text, source_vocab_to_int, target_vocab_to_int)
-
+    
+    print(source_text[0])
+    
     # Save Data
     pickle.dump((
         (source_text, target_text),
