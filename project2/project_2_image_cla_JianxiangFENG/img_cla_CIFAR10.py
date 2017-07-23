@@ -87,75 +87,80 @@ def preprocess_and_save_data(cifar10_dataset_folder_path, normalize, one_hot_enc
 
 valid_features, valid_labels = pickle.load(open('preprocess_validation.p', mode='rb'))
 
-def get_input(image_shape, n_classes):
-    x = tf.placeholder(tf.float32, [None, image_shape[0], image_shape[1], image_shape[2]], name='x')
-    y = tf.placeholder(tf.float32, [None, n_classes], name='y')
-    keep_pro = tf.placeholder(tf.float32, name='keep_pro')
-    return x, y, keep_pro
-
-def conv2d_maxpool(x_tensor, conv_num_outputs, conv_ksize, conv_strides, pool_ksize, pool_strides):
+def conv2d(x_tensor, conv_num_outputs, conv_ksize, conv_strides):
     x_shape = x_tensor.get_shape().as_list()
-    weights = tf.Variable(tf.random_normal([conv_ksize[0], conv_ksize[1], x_shape[3], conv_num_outputs], mean=0.0, stddev=0.1))
+    weights = tf.Variable(tf.truncated_normal([conv_ksize[0], conv_ksize[1], x_shape[3], conv_num_outputs], mean=0.0, stddev=0.1))
     biases = tf.Variable(tf.random_normal([conv_num_outputs]))
     #convolution
     conv_result = tf.nn.conv2d(x_tensor, weights, strides=[1,conv_strides[0],conv_strides[1],1], padding='SAME')
     conv_result = tf.nn.bias_add(conv_result, biases)
     conv_result = tf.nn.relu(conv_result)
+    return conv_result
+
+def maxpool(x_tensor, pool_ksize, pool_strides):
     #max-pooling
-    pool_result = tf.nn.max_pool(conv_result, ksize=[1,pool_ksize[0],pool_ksize[1],1], strides=[1,pool_strides[0],pool_strides[1],1], padding='SAME')
+    pool_result = tf.nn.max_pool(x_tensor, ksize=[1,pool_ksize[0],pool_ksize[1],1], strides=[1,pool_strides[0],pool_strides[1],1], padding='SAME')
     return pool_result
-
-def flatten(x_tensor):
-    return tf.contrib.layers.flatten(x_tensor)
-
+    
 def fully_conn(x_tensor, num_outputs):
     weights = tf.Variable(tf.random_normal([x_tensor.get_shape().as_list()[1],num_outputs], mean=0.0, stddev=0.1))
     bias = tf.Variable(tf.random_normal([num_outputs]))
     return tf.nn.relu(tf.add(tf.matmul(x_tensor,weights),bias))
 
+def output(x_tensor, num_outputs):
+    weights = tf.Variable(tf.random_normal([x_tensor.get_shape().as_list()[1],num_outputs], mean=0.0, stddev=0.1))
+    bias = tf.Variable(tf.random_normal([num_outputs]))
+    return tf.add(tf.matmul(x_tensor,weights),bias)
 
 def conv_net(x, keep_prob):
     """
     Create a convolutional neural network model
     """
     # TODO: Apply 1, 2, or 3 Convolution and Max Pool layers
-    layer = conv2d_maxpool(x, conv_num_outputs=32, conv_ksize=(5, 5), conv_strides=(1, 1), pool_ksize=(2, 2),pool_strides=(2, 2))
-    layer = conv2d_maxpool(layer, conv_num_outputs=64, conv_ksize=(5, 5), conv_strides=(1, 1), pool_ksize=(2, 2),pool_strides=(2, 2))
-    #layer = conv2d_maxpool(layer, conv_num_outputs=128, conv_ksize=(3, 3), conv_strides=(1, 1), pool_ksize=(2, 2),pool_strides=(2, 2))
-
+    conv1 = conv2d(x, conv_num_outputs=48, conv_ksize=(5, 5), conv_strides=(1, 1))
+    pool1 = maxpool(conv1, pool_ksize=(2, 2),pool_strides=(2, 2))
+    conv2 = conv2d(pool1, conv_num_outputs=128, conv_ksize=(5, 5), conv_strides=(1, 1))
+    pool2 = maxpool(conv2, pool_ksize=(2, 2),pool_strides=(2, 2))
+    conv3 = conv2d(pool2, conv_num_outputs=128, conv_ksize=(3, 3), conv_strides=(1, 1))
+    pool3 = maxpool(conv3, pool_ksize=(2, 2),pool_strides=(2, 2))
+        
     # TODO: Apply a Flatten Layer
-    layer = flatten(layer)
+    flatten = tf.contrib.layers.flatten(pool2)
 
     # TODO: Apply 1, 2, or 3 Fully Connected Layers
-    layer = fully_conn(layer, 1024)
-    layer = tf.nn.dropout(layer, keep_prob)
+    fc = fully_conn(flatten, 1024)
+    drop = tf.nn.dropout(fc, keep_prob)
     # layer = fully_conn(layer, 256)
     # layer = tf.nn.dropout(layer, keep_prob)
 
     # TODO: Apply an Output Layer
-    layer = fully_conn(layer, 10)
-    return layer
+    output_ = output(drop, 10)
+    return output_
 
 
 def train_neural_network():
-    epochs = 25
+    epochs = 20
     batch_size = 128
-    keep_probability = 0.5
+    keep_probability = 0.4
 
     # Build the Neural Network
     tf.reset_default_graph()
 
-    # Inputs
-    x, y, keep_prob = get_input((32, 32, 3), 10)
+    # get Inputs
+    image_shape = (32, 32, 3)
+    n_classes = 10
+    x = tf.placeholder(tf.float32, [None, image_shape[0], image_shape[1], image_shape[2]], name='x')
+    y = tf.placeholder(tf.float32, [None, n_classes], name='y')
+    keep_pro = tf.placeholder(tf.float32, name='keep_pro')
 
     # Model
-    logits = conv_net(x, keep_prob)
+    logits = conv_net(x, keep_pro)
     logits = tf.identity(logits, name='logits')
 
     # Loss and Optimizer
     cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=y))
     optimizer = tf.train.AdamOptimizer().minimize(cost)
-    # optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize(cost)
+    #optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize(cost)
 
     correct_pred = tf.equal(tf.argmax(logits, 1), tf.argmax(y, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32), name='accuracy')
@@ -172,11 +177,11 @@ def train_neural_network():
             n_batches = 5
             for batch_i in range(1, n_batches + 1):
                 for batch_features, batch_labels in helper.load_preprocess_training_batch(batch_i, batch_size):
-                    sess.run(optimizer, feed_dict={x:batch_features, y:batch_labels, keep_prob:keep_probability})
+                    sess.run(optimizer, feed_dict={x:batch_features, y:batch_labels, keep_pro:keep_probability})
                 print('Epoch {:>2}, CIFAR-10 Batch {}:  '.format(epoch + 1, batch_i), end='')
-                loss = sess.run(cost, feed_dict={x: batch_features, y: batch_labels, keep_prob: 1.})
-                train_acc = sess.run(accuracy, feed_dict={x: batch_features , y: batch_labels, keep_prob: 1.})
-                valid_acc = sess.run(accuracy, feed_dict={x: valid_features[:128], y: valid_labels[:128], keep_prob: 1.})
+                loss = sess.run(cost, feed_dict={x: batch_features, y: batch_labels, keep_pro: 1.})
+                train_acc = sess.run(accuracy, feed_dict={x: batch_features , y: batch_labels, keep_pro: 1.})
+                valid_acc = sess.run(accuracy, feed_dict={x: valid_features[:128], y: valid_labels[:128], keep_pro: 1.})
                 print("Loss is {:<10.5f},  Train_acc is {:<10.5f},  Valid_acc is {:<10.5f}".format(loss, train_acc, valid_acc))
         # Save Model
         saver = tf.train.Saver()
@@ -197,7 +202,7 @@ def test_model():
         # Get Tensors from loaded model
         loaded_x = loaded_graph.get_tensor_by_name('x:0')
         loaded_y = loaded_graph.get_tensor_by_name('y:0')
-        loaded_keep_prob = loaded_graph.get_tensor_by_name('keep_prob:0')
+        loaded_keep_prob = loaded_graph.get_tensor_by_name('keep_pro:0')
         loaded_logits = loaded_graph.get_tensor_by_name('logits:0')
         loaded_acc = loaded_graph.get_tensor_by_name('accuracy:0')
 
@@ -214,4 +219,5 @@ def test_model():
         print('Testing Accuracy: {}\n'.format(test_batch_acc_total / test_batch_count))
 
 if __name__ == '__main__':
-    train_neural_network()
+    #train_neural_network()
+    test_model()
